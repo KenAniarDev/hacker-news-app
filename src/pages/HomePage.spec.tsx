@@ -1,18 +1,21 @@
 import React from "react";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { BrowserRouter as Router } from "react-router-dom";
 import HomePage from "./HomePage";
 import { createServer } from "../server";
-const renderComponent = () => {
+import { rest } from "msw";
+import { setupServer } from "msw/node";
+
+const renderComponent = async () => {
   const { container } = render(
     <Router>
       <HomePage handleNewsClick={() => {}} />
     </Router>
   );
-
+  await screen.findAllByRole("link");
   return { container };
 };
-describe("HomePage", () => {
+describe("Homepage tests", () => {
   jest.setTimeout(17000);
 
   createServer([
@@ -41,57 +44,53 @@ describe("HomePage", () => {
       },
     },
   ]);
+
   test("should render the HomePage component by default", async () => {
-    renderComponent();
+    await renderComponent();
     const homeText = await screen.findByText("Home");
     expect(homeText).toBeInTheDocument();
   });
 
   test("should render news on mount", async () => {
-    renderComponent();
+    await renderComponent();
     const news = await screen.findByRole("link");
     expect(news).toBeInTheDocument();
   });
 
   test("fetches news every 10 seconds", async () => {
-    renderComponent();
+    await renderComponent();
 
     const news = await screen.findAllByRole("link");
-
-    await new Promise((r) => setTimeout(r, 11000));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 11000));
+    });
     const news2 = await screen.findAllByRole("link");
 
     expect(news2.length).toBeGreaterThan(news.length);
   });
 
   test("tests the scroll event, fetch if near the end", async () => {
-    const { container } = renderComponent();
+    const { container } = await renderComponent();
     const news1 = await screen.findAllByRole("listitem");
 
-    // fireEvent.scroll(window, {
-    //   target: { scrollY: container.offsetHeight * 0.7 },
-    // });
-    fireEvent.scroll(window, { target: { scrollY: window.innerHeight * 0.7 } });
+    // eslint-disable-next-line testing-library/no-unnecessary-act
+    await act(async () => {
+      fireEvent.scroll(window, {
+        target: {
+          scrollY: (container.offsetTop + container.offsetHeight) * 0.7,
+        },
+      });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
     const news2 = await screen.findAllByRole("listitem");
-    console.log(news2.length);
+    const homepageContainer = await screen.findByTestId("homepage-container");
+    expect(homepageContainer).toBeInTheDocument();
     expect(news2.length).toBeGreaterThan(news1.length);
   });
 
-  test("tests the scroll event, dont fetch if not near the end", async () => {
-    renderComponent();
-    const news1 = await screen.findAllByRole("link");
-    fireEvent.scroll(window, { target: { scrollY: window.innerHeight * 0.2 } });
-    console.log(window.innerHeight);
-    console.log(document.documentElement.offsetHeight);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    const news2 = await screen.findAllByRole("link");
-    console.log(news2.length);
-  });
-
   test("handleSearch is called with input value on input change", async () => {
-    renderComponent();
+    await renderComponent();
     const input = screen.getByRole("textbox");
     fireEvent.change(input, { target: { value: "test search term" } });
     const searchText = screen.getByText(/test search term/i);
@@ -99,7 +98,7 @@ describe("HomePage", () => {
   });
 
   test("render filtered news based on the search string", async () => {
-    renderComponent();
+    await renderComponent();
     const input = await screen.findByRole("textbox");
     let searchTerm = "abcdef";
 
@@ -115,40 +114,32 @@ describe("HomePage", () => {
   });
 });
 
-describe("HomePage Fail Api Request", () => {
-  createServer([
-    {
-      path: "https://hn.algolia.com/api/v1/search_by_date",
-      method: "get",
-      res: (req, res, ctx) => {
-        const page = req.url.searchParams.get("page");
-        if (!page) {
-          return {
-            hits: [],
-          };
-        }
-        throw new Error("error");
-        return {
-          hits: [
-            {
-              created_at: "2023-06-06T15:50:21.000Z",
-              title: "title " + page,
-              url: "https://hackernews/" + page,
-              author: "page " + page + " author",
-              _tags: ["story", "author_commoner", "story_36214688"],
-              objectID: "page" + page,
-            },
-          ],
-        };
-      },
-    },
-  ]);
+describe("HomePage test for failed API request", () => {
+  // Define the server request handler
+  const server = setupServer(
+    rest.get(
+      "https://hn.algolia.com/api/v1/search_by_date",
+      (req, res, ctx) => {
+        return res(
+          ctx.status(500), // Set the response status to 500 for an error
+          ctx.json({ error: "Internal Server Error" }) // Respond with an error message
+        );
+      }
+    )
+  );
+
+  // Start the server before running your tests
+  beforeAll(() => server.listen());
+
+  // Reset the server after each test
+  afterEach(() => server.resetHandlers());
+
+  // Clean up the server after all tests
+  afterAll(() => server.close());
 
   test("error should be displayed if fetch fails", async () => {
-    renderComponent();
-    // Wait for the error element to be present in the document
+    await renderComponent();
     const errorElement = await screen.findByTitle("error");
-    // Now you can make assertions about the errorElement, for example:
     expect(errorElement).toBeInTheDocument();
   });
 });

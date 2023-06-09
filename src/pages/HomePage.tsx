@@ -83,7 +83,7 @@ class HomePage extends Component<HomePageProps, HomePageState> {
     const { handleNewsClick } = this.props;
 
     return (
-      <div title="homepage-container" ref={this.containerRef}>
+      <div data-testid="homepage-container" ref={this.containerRef}>
         <header className="py-5 flex justify-between items-center">
           <h1 className="text-3xl font-bold underline text-slate-800">Home</h1>
           <Search handleSearch={this.handleInputSearchChange} />

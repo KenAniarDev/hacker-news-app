@@ -31,7 +31,7 @@ createServer([
   },
 ]);
 
-describe("App", () => {
+describe("App tests", () => {
   test("should render the HomePage component by default", () => {
     render(
       <Router>
